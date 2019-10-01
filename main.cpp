@@ -3,6 +3,8 @@
 #include <armadillo>
 #include <fstream>
 #include <string>
+#include <time.h>
+#include <math.h>
 
 
 using namespace std;
@@ -10,11 +12,13 @@ using namespace arma;
 
 void d_func(unsigned int n, double rhomax);
 void b_func();
-void e_func();
+void e_func(double omega);
 bool maxval_test();
-bool eigval_test(mat b, vec eigenval, mat eigenvec, uword n, int rhomax);
-void rotate(mat &b, uword &k, uword &l, unsigned int n);
+bool eigval_test(mat b, mat r, vec eigenval, mat eigenvec, uword n, int rhomax, double omega);
+void rotate(mat &b,mat &r, uword &k, uword &l, unsigned int n);
 void anal(uword n, vec &ana);
+void anal_e(uword n, vec &ana);
+void anal_b(uword n, vec &ana);
 void findmax(mat b, uword &l, uword &k, double &maxval);
 
 
@@ -30,9 +34,25 @@ int main(){
     }
     */
 
+//    d_func(10, 15);
 
 
-    e_func();
+
+    double omega_values [4] = {0.01, 0.5, 1.0, 5.0};
+    for(int i =0; i<4; i++){
+        e_func(omega_values[i]);
+    }
+
+
+    //b_func();
+
+
+
+    //calling maxval test
+    bool returnvalue_maxval = maxval_test();
+    if (returnvalue_maxval == false){
+        cout<<"fail in maxval_test"<<endl;
+    }
 
 }
 
@@ -77,10 +97,10 @@ void b_func(){
     uword k = 0;
 
     double maxval=100;
-    double eps = 1E-10;
-    unsigned int n = 10;
+    double eps = 1E-13;
+    unsigned int n = 100;
     double rhomin = 0;
-    double rhomax = 10;
+    double rhomax = 1;
     double h = (rhomax - rhomin)/n;
 
     double d = 2/(h*h);
@@ -104,37 +124,48 @@ void b_func(){
     //these values are used to test if future eigvals are similar
     vec eigval(n);
     mat eigvec(n,n);
+    mat r = eye(n,n);
     eig_sym(eigval, eigvec, b);
 
 
     sort(eigval);
 
 
-    while (count < 100000 && abs(maxval) > eps){
+    time_t start_bfunc, finish_bfunc;
+
+    start_bfunc = clock();
+
+    while (count < 1000000000 && abs(maxval) > eps){
 
         findmax(b, l, k, maxval);
 
 
-        rotate(b, k, l, n);
+        rotate(b, r, k, l, n);
         //cout<<b<<endl<<endl;
 
         count++;
 
+
     }
 
+    finish_bfunc = clock();
+    double time_used = (double) (finish_bfunc-start_bfunc)/(CLOCKS_PER_SEC);
+
+    cout<<"time used bfunc \n";
+    cout<<time_used<<endl;
+
+    cout<<"---------------------------------------------------------------- \n";
+    cout<<count<<endl;
+    cout<<"---------------------------------------------------------------- \n";
 
 
 
 
-    //calling maxval test
-    bool returnvalue_maxval = maxval_test();
-    if (returnvalue_maxval == false){
-        cout<<"fail in maxval_test"<<endl;
-    }
 
 
     //calling eigenvalue test
-    bool returnvalue_eigenvec = eigval_test(b, eigval, eigvec, n, rhomax);
+    double omega = 0; //Omega is not used in this part of the function, but i need it to be an input variable in eigval_test
+    bool returnvalue_eigenvec = eigval_test(b, r, eigval, eigvec, n, rhomax, omega);
     if (returnvalue_eigenvec == false){
         cout<<"fail in eigval test"<<endl;
     }
@@ -152,7 +183,7 @@ void d_func(unsigned int n, double rhomax){
     uword k = 0;
 
     double maxval=100;
-    double eps = 1E-8;
+    double eps = 1E-13;
 
     double rho_min = 0;
 
@@ -172,23 +203,35 @@ void d_func(unsigned int n, double rhomax){
     G(n-1,n-1) = d + (n)*(n)*h*h;
 
     int count = 0;
+    mat r = eye(n,n);
 
+    vec eigval(n);
+    mat eigvec(n,n);
 
-    while (count < 100000 && abs(maxval) > eps){
+    time_t start_arma, stop_arma;
+    start_arma = clock();
+
+    eig_sym(eigval, eigvec, G);
+
+    stop_arma = clock();
+
+    double time_used_arma = (double) (stop_arma - start_arma)/(CLOCKS_PER_SEC);
+    cout<<"time used arma \n";
+    cout<<time_used_arma<<endl;
+
+    while (count < 100000000 && abs(maxval) > eps){
 
         findmax(G, l, k, maxval);
         //cout<<G<<endl;
 
-        rotate(G, k, l, n);
+        rotate(G, r, k, l, n);
         //cout<<b<<endl<<endl;
 
 
         count++;
     }
 
-    vec eigval(n);
-    mat eigvec(n,n);
-    eig_sym(eigval, eigvec, G);
+
 
 
 
@@ -196,7 +239,8 @@ void d_func(unsigned int n, double rhomax){
 
 
     //calling eigenvalue test
-    bool returnvalue_eigenvec = eigval_test(G, eigval, eigvec, n, rhomax);
+    double omega = 0; //Omega is not used in this part of the function, but i need it to be an input variable in eigval_test
+    bool returnvalue_eigenvec = eigval_test(G, r, eigval, eigvec, n, rhomax, omega);
     if (returnvalue_eigenvec == false){
         cout<<"fail in eigval test"<<endl;
         }
@@ -205,7 +249,7 @@ void d_func(unsigned int n, double rhomax){
 
 }
 
-void rotate(mat &b, uword &k, uword &l, unsigned int n){
+void rotate(mat &b, mat &r, uword &k, uword &l, unsigned int n){
     double s, c;
 
     if (b(k,l) != 0.0){
@@ -230,7 +274,7 @@ void rotate(mat &b, uword &k, uword &l, unsigned int n){
 
     double b_kk = b(k,k);
     double b_ll = b(l,l);
-    double b_ik, b_il;
+    double b_ik, b_il, r_il, r_ik;
 
     b(k,k) = c*c*b_kk - 2.0*c*s*b(k,l) + s*s*b_ll;
     b(l,l) = s*s*b_kk + 2.0*c*s*b(k,l) + c*c*b_ll;
@@ -247,6 +291,11 @@ void rotate(mat &b, uword &k, uword &l, unsigned int n){
             b(i,l) = c*b_il + s*b_ik;
             b(l,i) = b(i,l);
         }
+        r_ik = r(i,k);
+        r_il = r(i,l);
+        r(i,k) = c*r_ik - s*r_il;
+        r(i,l) = c*r_il + s*r_ik;
+
 
     }
 
@@ -283,26 +332,54 @@ bool maxval_test(){
     }
 }
 
-bool eigval_test(mat b, vec eigval, mat eigvec, uword n, int rhomax){
+bool eigval_test(mat b, mat r, vec eigval, mat eigvec, uword n, int rhomax, double omega){
     //now only checks the final values, I.E, the diagonal elements in finished jacobie matrix
 
     vec new_eigval(n);
     mat new_eigvec(n,n);
 
+    time_t start_arma, stop_arma;
+    start_arma = clock();
+
     eig_sym(new_eigval, new_eigvec, b);
+
+    stop_arma = clock();
+
+    double time_used_arma = (double) (stop_arma - start_arma)/(CLOCKS_PER_SEC);
+    cout<<"time used arma \n";
+    cout<<time_used_arma<<endl;
 
 
     //opening file for storing results
-
+    string s11 = "eigvec";
     string s1 = "res";
     string s2 = to_string(n);
     string s3 = ".txt";
     string s4 = to_string(rhomax);
+    string s5 = to_string(omega);
 
-//    ofstream myfile;
-//    myfile.open(s1+s2+s4+s3); //typ res1020.txt
+    ofstream myfile;
 
-//    myfile<<"n= "+s2+ " "+"rhomax= "+s4+"\n";
+//    myfile.open(s1+s2+s4+s5+s3); //typ res10200,5.txt  //For plotting the error of different rhomax and n
+
+//    myfile<<"n= "+s2+ " "+"rhomax= "+s4+ + " " +"omega =" + s5+"\n";
+
+    //Finding the smallest eigenvalue and extracting the indices so i can write the corresponding eigenvector to file and plot it
+
+    uword min = b.index_min();
+    uvec max_ind = ind2sub(size(b), min);
+    int k = max_ind[0];
+    int l = max_ind[1];
+
+    //For writing the eigenvectors to a seperate file the eigenvector of the smallest eigenvalue
+
+    myfile.open(s11+s2+s4+s5+s3); //for writing eigenvectors to file and plotting
+    myfile<<"n= "+s2+ " "+"rhomax= "+s4+ + " " +"omega= " + s5+"\n";
+
+    //The line below should write the eigenvector of the smallest eigenvalue to file
+    myfile<<r.col(l);
+    myfile.close();
+
 
     double tol = 1E-10;
     bool res = true;
@@ -312,6 +389,7 @@ bool eigval_test(mat b, vec eigval, mat eigvec, uword n, int rhomax){
 //    cout<<f<<endl;
 //    cout<<eigval<<endl;
 
+    //this checks if the eigenvalues are close enough to what they were before rotation.
     for(int i = 0; i<n-1; i++){
 
         if (abs(f(i) - eigval(i)) < tol){
@@ -326,18 +404,27 @@ bool eigval_test(mat b, vec eigval, mat eigvec, uword n, int rhomax){
             return res;
         }
     }
+
     //comapring the analytical and numerical results for D
+    //and writing it to file
 
 
     vec ana(n);
     anal(n, ana);
     vec diff(n);
 
-    cout<<f<<" "<<ana<<endl;
-
+    cout<<"--------f---------\n";
+    cout<<f<<endl;
+    cout<<"-----anal----------\n";
+    cout<<ana<<endl;
+    cout<<"---------armadillo----------\n";
+    cout<<new_eigval<<endl;
+    cout<<"----------diff-------------\n";
     diff = abs(f-ana);
     cout<<diff<<endl;
 //    myfile<<diff;
+
+
 
 
 
@@ -352,8 +439,23 @@ void anal(uword n, vec & b ){
         b(i) = 3 + 4*i;
     }
 }
+void anal_b(uword n, vec &b){
+    double rhomin = 0;
+    double rhomax = 1;
+    double h = (rhomax - rhomin)/n;
 
-void e_func(){
+    double d = 2/(h*h);
+    double a = -(1/(h*h));
+    for (unsigned int i = 1; i<n+1;i++){
+        b(i-1) = d + 2*a * cos((i*M_PI)/(n+1));
+    }
+}
+
+void anal_e(uword n, vec &b){
+    //return a vector of analytical eigenvalues, but for two particle system
+}
+
+void e_func(double omega){
     uword l = 0;
     uword k = 0;
 
@@ -365,7 +467,7 @@ void e_func(){
     double h = (rhomax - rhomin)/n;
 
     double rho;
-    double omega = 0.01;
+
 
     double a = -1/(h*h);
 
@@ -386,13 +488,13 @@ void e_func(){
 
     int count = 0;
 
-
+    mat r = eye(n,n);
     while (count < 100000 && abs(maxval) > eps){
 
         findmax(P, l, k, maxval);
         //cout<<G<<endl;
 
-        rotate(P, k, l, n);
+        rotate(P, r, k, l, n);
         //cout<<b<<endl<<endl;
 
 
@@ -409,7 +511,7 @@ void e_func(){
 
 
     //calling eigenvalue test
-    bool returnvalue_eigenvec = eigval_test(P, eigval, eigvec, n, rhomax);
+    bool returnvalue_eigenvec = eigval_test(P, r, eigval, eigvec, n, rhomax, omega);
     if (returnvalue_eigenvec == false){
         cout<<"fail in eigval test"<<endl;
         }
